@@ -23,7 +23,7 @@ jobs:
       - name: Run SFIM fusion on bundled Pavia University example
         run: |
           cd demo
-          python hyperspectral_image_fusion.py --hsi DATA/INPUT/LR_HSI.mat --hsi-key data --msi DATA/INPUT/HR_MSI.mat --msi-key data --method sfim --mode 2
+          python hyperspectral_image_fusion.py --hsi DATA/INPUT/LR_HSI.mat --hsi-key data --msi DATA/INPUT/HR_MSI.mat --msi-key data --method sfim --mode 3
       - name: Calculate metrics against bundled reference
         run: |
           cd demo
@@ -45,7 +45,7 @@ jobs:
           denom = np.linalg.norm(ref, axis=2) * np.linalg.norm(out, axis=2)
           cosine = np.clip(dot / np.maximum(denom, 1e-12), -1, 1)
           sam = float(np.rad2deg(np.mean(np.arccos(cosine))))
-          row = {"method": "SFIM mode 2", "dataset": "Pavia University example",
+          row = {"method": "SFIM mode 3", "dataset": "Pavia University example",
                  "height": ref.shape[0], "width": ref.shape[1], "bands": ref.shape[2],
                  "RMSE": rmse, "PSNR": psnr, "SAM_deg": sam,
                  "output_min": float(out.min()), "output_max": float(out.max())}
