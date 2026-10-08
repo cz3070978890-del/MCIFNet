@@ -31,29 +31,37 @@ jobs:
           import csv
           import numpy as np
           from pathlib import Path
-          from FUNCTION.common import load_mat_array, to_hwc
+          from FUNCTION.common import imresize_cube, load_mat_array, to_hwc
 
           ref = to_hwc(load_mat_array(Path("DATA/REF.mat")))
+          hs = to_hwc(load_mat_array(Path("DATA/INPUT/LR_HSI.mat"), "data"))
+          ms = to_hwc(load_mat_array(Path("DATA/INPUT/HR_MSI.mat"), "data"))
           out = to_hwc(load_mat_array(Path("DATA/OUTPUT/LR_HSI_sfim.mat"), "data"))
-          if ref.shape != out.shape:
-              raise ValueError(f"Reference {ref.shape} != prediction {out.shape}")
-          diff = ref - out
-          rmse = float(np.sqrt(np.mean(diff ** 2)))
-          peak = float(np.max(ref))
-          psnr = float(10 * np.log10(peak ** 2 / np.mean(diff ** 2)))
-          dot = np.sum(ref * out, axis=2)
-          denom = np.linalg.norm(ref, axis=2) * np.linalg.norm(out, axis=2)
-          cosine = np.clip(dot / np.maximum(denom, 1e-12), -1, 1)
-          sam = float(np.rad2deg(np.mean(np.arccos(cosine))))
-          row = {"method": "SFIM mode 3", "dataset": "Pavia University example",
-                 "height": ref.shape[0], "width": ref.shape[1], "bands": ref.shape[2],
-                 "RMSE": rmse, "PSNR": psnr, "SAM_deg": sam,
-                 "output_min": float(out.min()), "output_max": float(out.max())}
+          baseline = imresize_cube(hs, ref.shape[0], ref.shape[1], order=3)
+          print(f"Input shapes: LR_HSI={hs.shape}, HR_MSI={ms.shape}, REF={ref.shape}")
+          if ref.shape != out.shape or ref.shape != baseline.shape:
+              raise ValueError("Reference, prediction, and baseline shapes must match")
+
+          def scores(name, image):
+              diff = ref - image
+              mse = np.mean(diff ** 2)
+              dot = np.sum(ref * image, axis=2)
+              denom = np.linalg.norm(ref, axis=2) * np.linalg.norm(image, axis=2)
+              cosine = np.clip(dot / np.maximum(denom, 1e-12), -1, 1)
+              return {"method": name, "dataset": "Pavia University example",
+                      "height": ref.shape[0], "width": ref.shape[1], "bands": ref.shape[2],
+                      "RMSE": float(np.sqrt(mse)),
+                      "PSNR": float(10 * np.log10(float(ref.max()) ** 2 / mse)),
+                      "SAM_deg": float(np.rad2deg(np.mean(np.arccos(cosine)))),
+                      "output_min": float(image.min()), "output_max": float(image.max())}
+
+          rows = [scores("Bicubic upsampling", baseline), scores("SFIM mode 3", out)]
           with open("DATA/OUTPUT/metrics.csv", "w", newline="") as f:
-              writer = csv.DictWriter(f, fieldnames=row.keys())
+              writer = csv.DictWriter(f, fieldnames=rows[0].keys())
               writer.writeheader()
-              writer.writerow(row)
-          print(row)
+              writer.writerows(rows)
+          for row in rows:
+              print(row)
           PY
       - uses: actions/upload-artifact@v4
         with:
