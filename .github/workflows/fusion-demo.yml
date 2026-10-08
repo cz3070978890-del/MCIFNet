@@ -1,0 +1,63 @@
+name: Run HSI-MSI fusion example
+on:
+  push:
+    branches:
+      - codex/fusion-demo-run
+  workflow_dispatch:
+
+jobs:
+  fusion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fetch pinned open source example
+        run: |
+          git clone https://github.com/baosen-h/HyperspectralImageFusion.git demo
+          cd demo
+          git checkout da387ae15e6c4e0086119d4e10c5626c26a7517c
+      - name: Install dependencies
+        run: python -m pip install -r demo/requirements.txt
+      - name: Run SFIM fusion on bundled Pavia University example
+        run: |
+          cd demo
+          python hyperspectral_image_fusion.py --hsi DATA/INPUT/LR_HSI.mat --hsi-key data --msi DATA/INPUT/HR_MSI.mat --msi-key data --method sfim --mode 2
+      - name: Calculate metrics against bundled reference
+        run: |
+          cd demo
+          python - <<'PY'
+          import csv
+          import numpy as np
+          from pathlib import Path
+          from FUNCTION.common import load_mat_array, to_hwc
+
+          ref = to_hwc(load_mat_array(Path("DATA/REF.mat")))
+          out = to_hwc(load_mat_array(Path("DATA/OUTPUT/LR_HSI_sfim.mat"), "data"))
+          if ref.shape != out.shape:
+              raise ValueError(f"Reference {ref.shape} != prediction {out.shape}")
+          diff = ref - out
+          rmse = float(np.sqrt(np.mean(diff ** 2)))
+          peak = float(np.max(ref))
+          psnr = float(10 * np.log10(peak ** 2 / np.mean(diff ** 2)))
+          dot = np.sum(ref * out, axis=2)
+          denom = np.linalg.norm(ref, axis=2) * np.linalg.norm(out, axis=2)
+          cosine = np.clip(dot / np.maximum(denom, 1e-12), -1, 1)
+          sam = float(np.rad2deg(np.mean(np.arccos(cosine))))
+          row = {"method": "SFIM mode 2", "dataset": "Pavia University example",
+                 "height": ref.shape[0], "width": ref.shape[1], "bands": ref.shape[2],
+                 "RMSE": rmse, "PSNR": psnr, "SAM_deg": sam,
+                 "output_min": float(out.min()), "output_max": float(out.max())}
+          with open("DATA/OUTPUT/metrics.csv", "w", newline="") as f:
+              writer = csv.DictWriter(f, fieldnames=row.keys())
+              writer.writeheader()
+              writer.writerow(row)
+          print(row)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pavia-sfim-output
+          path: |
+            demo/DATA/OUTPUT/LR_HSI_sfim.mat
+            demo/DATA/OUTPUT/metrics.csv
